@@ -1,0 +1,178 @@
+import cv2
+import mediapipe as mp
+import pyttsx3
+import time
+import math
+import threading
+
+
+
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+
+def speak_async(text):
+    def run():
+        engine.say(text)
+        engine.runAndWait()
+    threading.Thread(target=run, daemon=True).start()
+# ------------------ TTS ------------------
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+
+import threading
+
+# ------------------ MediaPipe ------------------
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
+)
+mp_draw = mp.solutions.drawing_utils
+
+TIP_IDS = [4, 8, 12, 16, 20]
+
+def fingers_up(lm):
+    fingers = []
+    fingers.append(1 if lm[4].x < lm[3].x else 0)
+    for i in range(1, 5):
+        fingers.append(1 if lm[TIP_IDS[i]].y < lm[TIP_IDS[i]-2].y else 0)
+    return tuple(fingers)
+
+def thumb_direction(lm):
+    if lm[4].y < lm[2].y:
+        return "UP"
+    elif lm[4].x < lm[2].x:
+        return "LEFT"
+    else:
+        return "RIGHT"
+
+def distance(p1, p2, w, h):
+    x1, y1 = int(p1.x * w), int(p1.y * h)
+    x2, y2 = int(p2.x * w), int(p2.y * h)
+    return math.hypot(x2-x1, y2-y1)
+
+# ------------------ Camera ------------------
+cap = cv2.VideoCapture(0)
+
+last_text = ""
+last_time = time.time()
+cooldown = 2
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    frame = cv2.flip(frame, 1)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(rgb)
+
+    gesture = ""
+
+    if results.multi_hand_landmarks:
+        for handLms in results.multi_hand_landmarks:
+            mp_draw.draw_landmarks(frame, handLms, mp_hands.HAND_CONNECTIONS)
+            lm = handLms.landmark
+
+            finger_state = fingers_up(lm)
+            h, w, _ = frame.shape
+            pinch = distance(lm[4], lm[8], w, h) < 40
+            thumb_dir = thumb_direction(lm)
+
+            # -------- Communication Gestures --------
+            if finger_state == (0,1,0,0,0):
+                gesture = "I need water"
+
+            elif finger_state == (0,1,1,0,0):
+                gesture = "I need food"
+
+            elif finger_state == (0,1,1,1,0):
+                gesture = "I need help"
+
+            elif finger_state == (0,1,1,1,1):
+                gesture = "Call my family"
+
+            elif finger_state == (0,0,0,0,0):
+                gesture = "Yes"
+
+            elif finger_state == (1,1,1,1,1):
+                gesture = "No"
+
+            elif thumb_dir == "UP":
+                gesture = "Thank you"
+
+            elif thumb_dir == "LEFT":
+                gesture = "Please come here"
+
+            elif thumb_dir == "RIGHT":
+                gesture = "Go there"
+
+            elif pinch and finger_state == (1,1,0,0,0):
+                gesture = "I am in pain"
+
+            elif pinch and finger_state == (1,1,1,0,0):
+                gesture = "I am okay"
+
+            elif finger_state == (0,0,1,0,0):
+                gesture = "Hello"
+
+            elif finger_state == (0,0,0,1,0):
+                gesture = "Goodbye"
+
+            elif finger_state == (1,0,0,0,1):
+                gesture = "Call doctor"
+
+            elif finger_state == (1,1,0,0,1):
+                gesture = "Emergency"
+
+            elif finger_state == (0,1,0,0,1):
+                gesture = "I feel cold"
+
+            elif finger_state == (1,0,1,0,0):
+                gesture = "I feel hot"
+
+            elif finger_state == (1,0,1,1,0):
+                gesture = "Open the door"
+
+            elif finger_state == (1,1,0,1,0):
+                gesture = "Close the door"
+
+            elif finger_state == (1,1,0,1,1):
+                gesture = "Turn on the light"
+
+            elif finger_state == (0,1,1,0,1):
+                gesture = "Turn off the light"
+
+            elif finger_state == (1,0,0,1,1):
+                gesture = "I want to sleep"
+
+            elif finger_state == (1,1,1,0,1):
+                gesture = "I want to sit"
+
+            elif finger_state == (0,0,1,1,1):
+                gesture = "I want to stand"
+
+            elif finger_state == (1,1,1,1,0):
+                gesture = "I am tired"
+
+    # -------- Display text --------
+    cv2.putText(frame, gesture, (10,70),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0,255,0), 3)
+
+    # -------- Speak --------
+    
+
+    cv2.imshow("Gesture Communication System", frame)
+
+    if cv2.waitKey(1) & 0xFF == 2:
+     if gesture and gesture != last_text and time.time()-last_time > cooldown:
+      speak_async(gesture)
+     break
+
+cap.release()
+cv2.destroyAllWindows()
+
+engine = pyttsx3.init()
+engine.say("Testing voice")
+engine.runAndWait()
